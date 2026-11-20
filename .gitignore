@@ -1,0 +1,16 @@
+# ===== 密钥与隐私（绝不提交）=====
+.env
+*.env
+!.env.example
+
+# ===== AI 草稿区（不入库）=====
+ai-sandbox/
+
+# ===== Node =====
+node_modules/
+npm-debug.log*
+
+# ===== 系统文件 =====
+Thumbs.db
+.DS_Store
+desktop.ini
