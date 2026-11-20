@@ -84,6 +84,12 @@
     border: 1px solid #e5e6eb;
     border-bottom-left-radius: 4px;
   }
+  /* 出错时整颗气泡变红，避免用户把错误当成正常回复（原来只加了 class 没有样式） */
+  .row.assistant .bubble.error {
+    background: #fff2f0;
+    border-color: #ffccc7;
+    color: #a8071a;
+  }
   /* 流式光标：assistant 正在"打字"时显示 ▍ */
   .bubble.streaming::after {
     content: "▍";
@@ -190,6 +196,7 @@ const $status    = document.getElementById("status");
    每次请求把整个 messages 数组发给后端（契约第 1 条）
    ========================================================= */
 const history = []; // [{ role: "user"|"assistant", content: "..." }]
+let busy = false;   // 流式进行中标志：按钮 disabled 挡不住键盘 Enter，必须自己拦
 
 /* =========================================================
    UI：往消息区追加一个气泡
@@ -222,9 +229,11 @@ function scrollToBottom() {
    4. 结束后把完整回复也入 history
    ========================================================= */
 async function sendMessage() {
+  if (busy) return;               // 上一轮还在流式输出，忽略这次发送（防并发）
   const text = $input.value.trim();
   if (!text) return;
 
+  busy = true;
   $input.value = "";
   autoResize();
   $send.disabled = true;
@@ -246,12 +255,14 @@ async function sendMessage() {
     bubble.textContent += "\n[出错] " + (err && err.message ? err.message : err);
     bubble.classList.remove("streaming");
     bubble.classList.add("error");
+    busy = false;
     $send.disabled = false;
     return;
   }
 
   bubble.classList.remove("streaming");
   if (full) history.push({ role: "assistant", content: full });
+  busy = false;
   $send.disabled = false;
   $input.focus();
 }
@@ -303,11 +314,20 @@ function mockStream(messages, onDelta) {
    返回完整拼接文本
    ========================================================= */
 async function realStream(messages, onDelta) {
-  const resp = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
-  });
+  // 60 秒内连响应头都拿不到就中止：避免后端卡死时发送按钮永久禁用、只能刷新
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  let resp;
+  try {
+    resp = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);   // 已拿到响应头，之后是流式读取，不再受这个超时约束
+  }
 
   if (!resp.ok) {
     throw new Error("HTTP " + resp.status);
@@ -347,6 +367,20 @@ async function realStream(messages, onDelta) {
         } catch (_) {
           // 非 JSON 的 data 行，忽略（比如心跳）
         }
+      }
+    }
+  }
+
+  // 流结束时 buffer 里可能还剩最后一段没遇到空行分隔符，这里补解析一次，避免丢字
+  if (buffer.trim()) {
+    for (const line of buffer.split("\n")) {
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      try {
+        const obj = JSON.parse(payload);
+        if (typeof obj.delta === "string") { full += obj.delta; onDelta(obj.delta); }
+      } catch (_) {
+        // 忽略非 JSON 尾行
       }
     }
   }
