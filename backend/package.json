@@ -1,12 +1,13 @@
 {
   "name": "ai-agent",
   "version": "1.0.0",
-  "description": "从零理解 AI Agent：阶段1 最小闭环",
+  "description": "AI Agent 协作项目后端：HTTP + /api/chat + SSE 流式",
   "type": "module",
   "main": "step1-hello.js",
   "scripts": {
     "step1": "node --env-file=.env step1-hello.js",
-    "step2": "node --env-file=.env step2-stream.js"
+    "step2": "node --env-file=.env step2-stream.js",
+    "start": "node --env-file=.env server.js"
   },
   "license": "MIT"
 }

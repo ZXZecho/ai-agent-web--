@@ -23,8 +23,8 @@ const BASE_URL = (process.env.BASE_URL || "https://api.deepseek.com").replace(/\
 const MODEL = process.env.MODEL || "deepseek-chat";
 if (!API_KEY) { console.error("❌ 没找到 API_KEY，请用 --env-file 指向含密钥的 .env"); process.exit(1); }
 
-// ---- 安全护栏：API 产出的文件只能落在这两个目录，防越权写盘 ----
-const ALLOWED_DIRS = ["frontend/", "ai-sandbox/"];
+// ---- 安全护栏：API 产出的文件只能落在这个目录（msg-0006 用户裁决：收窄，frontend/ 已移除）----
+const ALLOWED_DIRS = ["ai-sandbox/lead-proxy/"];
 
 // ---- 工具函数 ----
 const state = fs.existsSync(STATE_FILE)
@@ -42,8 +42,14 @@ function listLetters() {
 
 // ---- 组装系统提示词：把"lead 的人设 + 项目契约 + 纪律"一次性交给它 ----
 function systemPrompt() {
-  return `你是 lead，一个 AI 前端工程师兼审查员，在"AI 协作开发 Agent 网页"项目里和后端负责人 WorkBuddy 协作。
-你们通过 inbox/ 目录里的 Markdown 信件交流。用户（人类）只在风险操作和分歧裁决时出现。
+  return `你是 lead-proxy——真实 lead（DSH 会话）的**草稿机**，由 relay 脚本经 DeepSeek API 代跑。
+你与真实 lead 共享同一个模型大脑，但**身份和权限完全不同**，这是用户定下的裁决，必须严格遵守：
+
+## 身份铁律（违反即冒名，已发生过一次事故）
+1. 你的署名永远是 **lead-proxy（relay 代跑）**，绝不能写"lead"、"真实 DSH 会话"等字样
+2. 你的产出只是**草稿/建议**，不构成审查结论——不能写"审查通过/验收通过/阻塞必须修"等裁决性用语，
+   只能写"草稿意见：建议……"
+3. 正式审查由真实 lead（DSH 会话）负责，你的草稿仅供它参考
 
 ## 项目契约（不得更改）
 - 前端 → 后端：POST http://localhost:3000/api/chat，请求体 { "messages": [ { "role": "user", "content": "..." } ] }
@@ -51,26 +57,23 @@ function systemPrompt() {
 - 技术栈：后端 Node.js 原生 http（无框架）；前端单文件 index.html（纯 HTML+CSS+JS，无框架无构建）
 - 大模型：DeepSeek deepseek-chat，密钥只在后端 .env，前端绝不出现任何密钥
 
-## 分工
-- WorkBuddy：后端 server.js（HTTP 服务 + /api/chat + SSE 流式 + 多轮记忆）+ 架构 + 最终验收
-- 你 lead：前端 index.html + 交叉审查 WorkBuddy 的后端代码 + 集成联调建议
-- GitHub 仓库由用户创建，地址出来后由 WorkBuddy 配 remote
+## 分工现状
+- WorkBuddy：后端 server.js + 架构 + 最终验收
+- 真实 lead（DSH 会话）：前端 index.html + 交叉审查
+- 你 lead-proxy：只出草稿，落盘白名单只有 ai-sandbox/lead-proxy/
 
 ## 你的输出纪律（非常重要）
-1. 每次回复 = 一封完整信件，Markdown 格式，开头带元数据块：
-   # 回信标题
-   - **from**：lead（via relay）
-   - **to**：WorkBuddy
-   - **type**：答复|交付|审查|询问
-   - **reply-to**：（回应的信件文件名）
-2. 需要交付代码文件时，用这种格式（一行都不能少）：
-   \`\`\`file:frontend/index.html
+1. 每次回复 = 一份草稿，Markdown 格式，开头带元数据块：
+   # 草稿标题
+   - **from**：lead-proxy（relay 代跑）
+   - **to**：WorkBuddy / 真实lead
+   - **type**：草稿建议
+2. 建议交付的代码文件用这种格式（会自动落盘到 ai-sandbox/lead-proxy/）：
+   \`\`\`file:ai-sandbox/lead-proxy/文件名
    <完整文件内容>
    \`\`\`
-   路径只允许 frontend/ 或 ai-sandbox/ 开头。交付完整文件，不要片段。
 3. 简洁：回答问题不超过 300 字；代码除外。不寒暄，直接干货。
-4. 审查后端代码时，按严重度分级：[阻塞]/[建议]/[吹毛求疵]，每条给出行号和理由。
-5. 遵守安全协议：不把密钥写进前端或文档；不提议删除文件、force push；push 必须经用户。`;
+4. 遵守安全协议：不把密钥写进前端或文档；不提议删除文件、force push。`;
 }
 
 // ---- 调 DeepSeek API（复用项目里学的请求格式）----
@@ -160,16 +163,17 @@ async function main() {
     `以下是收件箱里的最近信件（按时间顺序），最后几封是发给你（lead）的，请阅读并回复最新待办。\n\n## 仓库现状\n${repoTree}\n\n${history}`
   );
 
-  // 回信落盘
+  // 回信落盘（msg-0006 整改：署名 lead-proxy；文件名用时间戳防两个进程撞名）
   const stamp = new Date().toISOString().slice(0, 10);
   state.rounds += 1;
-  const replyName = `to-workbuddy-from-lead-relay-${stamp}-${state.rounds}.md`;
+  const replyName = `to-workbuddy-from-lead-proxy-${stamp}-${Date.now()}.md`;
   const written = extractAndWriteFiles(reply);
-  const postscript = written.length
-    ? `\n\n---\n*relay 已自动落盘 ${written.length} 个文件：${written.join(", ")}*`
-    : "";
+  const postscript = [
+    written.length ? `\n\n---\n*relay 已自动落盘 ${written.length} 个文件：${written.join(", ")}*` : "",
+    `\n> ⚠️ 本信由 lead-proxy 自动生成，不构成 lead 的审查意见。`,
+  ].join("");
   fs.writeFileSync(path.join(INBOX, replyName), reply + postscript, "utf8");
-  console.log(`✅ lead 的回信已写入：${replyName}`);
+  console.log(`✅ lead-proxy 的草稿已写入：${replyName}`);
 
   // 标记已处理
   for (const p of pending) state.processedLetters.push(p.name);
