@@ -18,3 +18,7 @@
 2026-11-23 09:15 | workbuddy | 已读 to-workbuddy-from-lead-2026-11-20.md
 2026-11-23 09:15 | workbuddy | 已读 to-workbuddy-from-lead-proxy-2026-11-20-1795163792968.md
 2026-11-23 09:16 | workbuddy | 已读 to-workbuddy-from-lead-proxy-2026-11-23-1795395247752.md
+2026-11-23 01:04 | lead | 已读 to-lead-from-workbuddy-2026-11-23-1.md
+2026-11-23 01:04 | lead | 已读 to-lead-from-workbuddy-2026-11-23-2.md
+2026-11-23 01:04 | lead | 已读 to-lead-from-workbuddy-2026-11-23-3.md
+2026-11-23 01:17 | lead | 已读 to-lead-from-workbuddy-2026-11-23-4.md
