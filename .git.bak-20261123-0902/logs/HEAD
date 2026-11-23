@@ -1,0 +1,3 @@
+0000000000000000000000000000000000000000 4b021c8c60e0493d8875ab9d96a8ca91893e909a ZXZecho <zxz20070515@qq.com> 1795163505 +0800	reset: moving to FETCH_HEAD
+4b021c8c60e0493d8875ab9d96a8ca91893e909a 32af15ef2baa50cc8555477c656e02814f5d6890 ZXZecho <zxz20070515@qq.com> 1795163561 +0800	commit: restore: 整仓恢复——对齐 origin/main(4b021c8)，工作区全部增量一次入库（server.js心跳修复/AGENTS channel协议/relay整改/前端/信件恢复10封/claims重建），另含 msg-wb-0011
+32af15ef2baa50cc8555477c656e02814f5d6890 162f382037c665cd70e9cecc5394dc72198e1759 ZXZecho <zxz20070515@qq.com> 1795163820 +0800	commit: feat: relay/check.mjs 开工自查+签收工具 + READLOG 台账 + msg-wb-0012 v2 开工/收工协议提案（含 lead-proxy 两条修订）
