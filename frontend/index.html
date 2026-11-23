@@ -10,7 +10,7 @@
     请求：POST http://localhost:3000/api/chat
           body: { "messages": [ { "role": "user", "content": "..." } ] }
     响应：SSE，每条 data: {"delta": "增量文字"}，结束 data: [DONE]
-  当前处于 MOCK_MODE（假流式），接口通了把 MOCK_MODE 改成 false 即可。
+  MOCK_MODE = false：走真后端 SSE（2026-11-23 端到端联调通过）；改回 true 可离线演示假流式。
 -->
 <style>
   /* ---------- 全局：浅色、极简，手机也能用 ---------- */
@@ -178,9 +178,10 @@
    全局配置
    ========================================================= */
 const API_URL = "http://localhost:3000/api/chat";
-// 开关：true = 本地假流式；false = 走真后端 SSE。
-// 后端 server.js 一通，把这里改成 false 即可，其它代码不用动。
-const MOCK_MODE = true;
+// 开关：true = 本地假流式（不联网，纯前端演示）；false = 走真后端 SSE。
+// 2026-11-23：后端 server.js 已端到端联调通过（真 key、47 段增量、首字 345ms），
+// 所以这里正式切到 false。想离线演示交互效果时改回 true 即可。
+const MOCK_MODE = false;
 
 /* =========================================================
    DOM 引用
@@ -196,6 +197,10 @@ const $status    = document.getElementById("status");
    每次请求把整个 messages 数组发给后端（契约第 1 条）
    ========================================================= */
 const history = []; // [{ role: "user"|"assistant", content: "..." }]
+// 上下文窗口：每次只把最近 MAX_CONTEXT 条发给后端。
+// 为什么：契约要求带全量历史，但聊久了 token 会暴涨（越聊越贵，还可能超模型上限）。
+// 20 条 = 10 轮对话，教学场景够用；history 本身不截断，页面上仍能翻到最早的消息。
+const MAX_CONTEXT = 20;
 let busy = false;   // 流式进行中标志：按钮 disabled 挡不住键盘 Enter，必须自己拦
 
 /* =========================================================
@@ -213,12 +218,28 @@ function appendBubble(role, text = "") {
 
   row.appendChild(bubble);
   $messages.appendChild(row);
-  scrollToBottom();
+  // 自己发的消息一定跳到最新；对方的消息只在"你本来就在底部"时才跟随，
+  // 否则你正往上翻历史，会被流式的字不断拽回底部（这就是滚动锚定）
+  scrollToBottom(role === "user");
   return bubble;
 }
 
-function scrollToBottom() {
+function isNearBottom() {
+  const gap = $messages.scrollHeight - $messages.scrollTop - $messages.clientHeight;
+  return gap < 80;   // 80px 容差：差不多到底了就算"在看最新"
+}
+
+function scrollToBottom(force = false) {
+  if (!force && !isNearBottom()) return;
   $messages.scrollTop = $messages.scrollHeight;
+}
+
+function contextWindow() {
+  // 取最近 MAX_CONTEXT 条，并保证第一条是 user：
+  // 从 assistant 开头会让模型看到"没有提问的回答"，容易答偏。
+  let msgs = history.slice(-MAX_CONTEXT);
+  while (msgs.length && msgs[0].role !== "user") msgs = msgs.slice(1);
+  return msgs;
 }
 
 /* =========================================================
@@ -246,10 +267,10 @@ async function sendMessage() {
 
   let full = "";
   try {
-    full = await streamReply(history, (delta) => {
+    full = await streamReply(contextWindow(), (delta) => {
       // 每收到一段增量，就往气泡里追加
       bubble.textContent += delta;
-      scrollToBottom();
+      scrollToBottom();   // 只在用户本来就贴着底部时才跟随滚动
     });
   } catch (err) {
     bubble.textContent += "\n[出错] " + (err && err.message ? err.message : err);
@@ -261,7 +282,14 @@ async function sendMessage() {
   }
 
   bubble.classList.remove("streaming");
-  if (full) history.push({ role: "assistant", content: full });
+  // 后端把错误也走 SSE 发出来（HTTP 200 + delta "\n[出错] …"），所以这里按前缀识别：
+  //   ① 气泡标红，别让用户把报错当成正常回答
+  //   ② 不写进 history，否则下一轮会把"出错"当成上下文发给模型
+  if (full.trimStart().startsWith("[出错]")) {
+    bubble.classList.add("error");
+  } else if (full) {
+    history.push({ role: "assistant", content: full });
+  }
   busy = false;
   $send.disabled = false;
   $input.focus();
@@ -418,7 +446,9 @@ if (MOCK_MODE) {
 // 开场一条欢迎，避免空白
 appendBubble(
   "assistant",
-  "你好，我是前端页面。当前是 Mock 模式，后端接口一通就会切真流式。\n试着发一条消息吧。"
+  MOCK_MODE
+    ? "你好，我是前端页面。当前是 Mock 模式（本地假流式，不联网）。\n试着发一条消息吧。"
+    : "你好，我是 AI Agent 聊天页面。\n后端已接上 DeepSeek，回答会逐字流式出现；每次请求会带上最近 20 条上下文。"
 );
 </script>
 </body>
